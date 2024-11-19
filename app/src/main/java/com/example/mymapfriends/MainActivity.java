@@ -2,6 +2,7 @@ package com.example.mymapfriends;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
@@ -39,7 +40,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final int REQUEST_PHONE_CALL = 1;
     private GoogleMap mMap;
     private FirebaseFirestore db;
-    private FirebaseAuth mAuth;
+    private static FirebaseAuth mAuth;
+    private SmsReceiver smsReceiver = new SmsReceiver();
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -51,6 +54,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         signInAnonymously();
 
         db = FirebaseFirestore.getInstance();
+        String sender = getIntent().getStringExtra("sender");
+        String message = getIntent().getStringExtra("message");
+
+        if (sender != null && message != null) {
+            // Example: Display the received SMS in a Toast
+            Toast.makeText(this, "Message from " + sender + ": " + message, Toast.LENGTH_LONG).show();
+        }
 
         // Initialize the map
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
@@ -58,9 +68,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (mapFragment != null) {
             mapFragment.getMapAsync(this);
         }
+
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+
     }
 
-    private void signInAnonymously() {
+    @Override
+    protected void onStart() {
+        super.onStart();
+        // Register the receiver to listen for incoming SMS messages
+        IntentFilter filter = new IntentFilter("android.provider.Telephony.SMS_RECEIVED");
+        registerReceiver(smsReceiver, filter);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Unregister the receiver when the activity is no longer visible
+        unregisterReceiver(smsReceiver);
+    }
+
+    public void signInAnonymously() {
         mAuth.signInAnonymously()
                 .addOnCompleteListener(this, task -> {
                     if (task.isSuccessful()) {
@@ -68,8 +96,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         if (user != null) {
                             Log.d("Auth", "User ID: " + user.getUid());
                         }
-                    } else {
-                        Toast.makeText(MainActivity.this, "Authentication failed.", Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -249,6 +275,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             deleteButton.setOnClickListener(v -> deleteMarkerFromFirebase(position, marker));
             sendSmsButton.setOnClickListener(v -> sendMessage(position.getPhoneNumber(), "Hello from MyMapFriends!"));
+
         }
 
         return view;
@@ -268,6 +295,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     Toast.makeText(this, "Error deleting friend.", Toast.LENGTH_SHORT).show();
                     Log.e("Firestore", "Error deleting document", e);
                 });
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent); // Update intent for this activity
+
+        // Reload map data or refresh UI if necessary
+        fetchPositionsFromFirestore();
     }
 
 

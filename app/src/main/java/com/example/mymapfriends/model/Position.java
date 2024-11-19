@@ -27,6 +27,13 @@ public class Position {
         this.name = name;
     }
 
+    public Position(double latitude, double longitude) {
+        this.phoneNumber = "5551234567";
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.name = "Friend";
+    }
+
     // Getters and setters
     public String getPositionId() {
         return positionId;
