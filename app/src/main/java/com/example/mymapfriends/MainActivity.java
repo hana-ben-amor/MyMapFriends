@@ -13,6 +13,7 @@ import android.location.LocationManager;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.Looper;
 import android.provider.Telephony;
 import android.telephony.SmsManager;
@@ -41,6 +42,7 @@ import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 
 
 import org.json.JSONArray;
@@ -67,11 +69,40 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private LocationListener locationListener;
     private LatLng latLng;
     private LocationManager locationManager;
-
+    private List<LatLng> predefinedLocations = new ArrayList<>();
+    private int currentLocationIndex = 0;
+    private Polyline currentPolyline; // Polyline to show the path
+    private Marker currentMarker;
+    private Marker startMarker;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+
+        // Initialize predefined locations (static points)
+        predefinedLocations.add(new LatLng(33.55, 9.5375));  // Sousse
+        predefinedLocations.add(new LatLng(33.58, 9.56));
+        predefinedLocations.add(new LatLng(33.60, 9.57));
+
+        locationListener = new LocationListener() {
+            @Override
+            public void onLocationChanged(@NonNull Location location) {
+                latLng = new LatLng(location.getLatitude(), location.getLongitude());
+                // Move camera to the user's current position
+                mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+                if (currentMarker != null) {
+                    currentMarker.remove();  // Remove previous marker
+                }
+                currentMarker=mMap.addMarker(new MarkerOptions().position(latLng).title("My position"));
+
+                // Send SMS with the current position
+                sendPositionSMS(location);
+
+                // Draw path if moving to the next predefined location
+                drawPathBetweenAllLocations();
+            }
+        };
         LocalBroadcastManager.getInstance(this).registerReceiver(positionReceiver,
                new IntentFilter("com.example.mymapfriends.POSITION_RECEIVED"));
 
@@ -93,6 +124,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
 
     }
+    private void sendPositionSMS(Location location) {
+        String phone = "+15551234567";
+        String myLatitude = String.valueOf(location.getLatitude());
+        String myLongitude = String.valueOf(location.getLongitude());
+        String message = "My position is: #" + myLatitude + "#" + myLongitude;
+        SmsManager smsManager = SmsManager.getDefault();
+        smsManager.sendTextMessage(phone, null, message, null, null);
+    }
+
 
 
 
@@ -120,6 +160,30 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     };
 
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        // Request location updates (you may already have these in your code)
+        locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        try {
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, MIN_TIME, MIN_DIST, locationListener);
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, MIN_TIME, MIN_DIST, locationListener);
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        // Remove location updates when the activity is paused
+        if (locationManager != null && locationListener != null) {
+            locationManager.removeUpdates(locationListener);
+        }
+    }
     private boolean checkPermissions() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
@@ -143,8 +207,114 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
 
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        mMap = googleMap;
+
+        fetchPositionsFromServer();
+        // Move camera to a starting position (e.g., Sousse)
+        LatLng startLocation = predefinedLocations.get(0);
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(startLocation, 12));
+
+        // Add a marker for the starting position
+        startMarker=mMap.addMarker(new MarkerOptions().position(startLocation).title("Start"));
+
+        // Start simulating the movement from the first predefined location
+        simulateMovement();
+        mMap.setOnMarkerClickListener(marker -> {
+            // Get position data for the marker (ensure marker.getTag() contains the Position object)
+            Position position = (Position) marker.getTag();
+
+            if (position != null) {
+                // Show the info window when a marker is clicked
+                marker.showInfoWindow();
+
+                // Show the action dialog (implement showMarkerActionDialog as needed)
+                showMarkerActionDialog(marker, position);
+            }
+
+            return true; // Prevent default behavior (like zooming or moving the camera)
+        });
+
+        // Handle map click to show popup
+        mMap.setOnMapClickListener(latLng -> showPopup(latLng));
 
 
+    // Handle map click to show popup
+    }
+    private void simulateMovement() {
+        if (currentLocationIndex < predefinedLocations.size()) {
+            LatLng nextLocation = predefinedLocations.get(currentLocationIndex);
+
+            // Move camera to the next location
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(nextLocation, 12));
+
+            // Add a marker at the next location
+            mMap.addMarker(new MarkerOptions().position(nextLocation).title("Next location"));
+
+            // If not the first location, draw a path between the previous and current location
+            if (currentLocationIndex > 0) {
+                LatLng previousLocation = predefinedLocations.get(currentLocationIndex - 1);
+                if (currentPolyline != null) {
+                    currentPolyline.remove(); // Remove the previous path
+                }
+                currentPolyline = mMap.addPolyline(new PolylineOptions()
+                        .add(predefinedLocations.get(0), nextLocation)  // Points to draw the path
+                        .color(Color.BLUE)  // Set the color of the path
+                        .width(8));   /// Set the path width
+
+                //drawPathBetweenAllLocations();
+            }
+
+            // Move to the next predefined location after 5 seconds (simulate movement)
+            new Handler().postDelayed(() -> {
+                currentLocationIndex++;  // Move to the next static location
+                simulateMovement();      // Keep simulating the movement
+            }, 5000);  // Delay for 5 seconds before moving to the next location
+        }
+    }
+
+    private void drawPathBetweenLocations() {
+        if (currentLocationIndex > 0) {
+            LatLng previousLocation = predefinedLocations.get(currentLocationIndex - predefinedLocations.size());
+            LatLng currentLocation = predefinedLocations.get(currentLocationIndex);
+
+            if (currentPolyline != null) {
+                currentPolyline.remove();  // Remove previous polyline if exists
+            }
+
+            // Draw a polyline between the last and current locations
+            currentPolyline = mMap.addPolyline(new PolylineOptions()
+                    .add(previousLocation, currentLocation)
+                    .color(Color.BLUE)  // Blue path color
+                    .width(9));         // Path width
+        }
+    }
+
+    private void drawPathBetweenAllLocations() {
+        // Remove previous polyline
+        if (currentPolyline != null) {
+            currentPolyline.remove();
+        }
+
+        // List to store points for the polyline
+        List<LatLng> pathPoints = new ArrayList<>();
+
+        // Add all predefined locations to path points
+        pathPoints.addAll(predefinedLocations);
+
+        // Add the current location as the last point of the path
+        pathPoints.add(latLng); // Current location marker
+
+        // Draw the polyline between all points (static locations and current location)
+        currentPolyline = mMap.addPolyline(new PolylineOptions()
+                .addAll(pathPoints)  // Path between all predefined locations and current position
+                .color(Color.BLUE)    // Blue path color
+                .width(5));           // Path width
+    }
+
+
+/*
     @Override
     public void onMapReady(@NonNull GoogleMap googleMap) {
         mMap = googleMap;
@@ -171,7 +341,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         String phone="+15551234567";
                         String myLatitude = String.valueOf(location.getLatitude());
                         String myLongitude = String.valueOf(location.getLongitude());
-                        String message="Latitude = "+myLatitude+" Longitude = "+myLongitude;
+                        String message="My position is : #"+myLatitude+"#"+myLongitude;
                         SmsManager smsManager=SmsManager.getDefault();
                         smsManager.sendTextMessage(phone,null,message,null,null);
                     }
@@ -197,7 +367,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
         // Handle map click for empty zones
         mMap.setOnMapClickListener(this::showPopup);
-    }
+    }*/
 
     private void fetchPositionsFromServer() {
         // URL to your PHP backend script that fetches all positions
@@ -275,8 +445,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
         }.execute();
     }
-
-
 
 
 
