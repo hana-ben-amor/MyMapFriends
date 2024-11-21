@@ -1,13 +1,21 @@
 package com.example.mymapfriends;
 
 import android.Manifest;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Looper;
+import android.provider.Telephony;
+import android.telephony.SmsManager;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -21,6 +29,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 import com.example.mymapfriends.model.Position;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -30,6 +40,8 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import com.google.android.gms.maps.model.Polyline;
+import com.google.android.gms.maps.model.PolylineOptions;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.firestore.FirebaseFirestore;
@@ -48,24 +60,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private static final int REQUEST_PHONE_CALL = 1;
     private GoogleMap mMap;
-    private FirebaseFirestore db;
-    private static FirebaseAuth mAuth;
+    private Marker friendMarker;
+    private List<LatLng> routePoints = new ArrayList<>();  // List to track the route (optional)
+    private Polyline routePolyline = null;  // Polyline for the route (optional)
+
     private SmsReceiver smsReceiver = new SmsReceiver();
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
-
+    private final long MIN_TIME=1000;
+    private final long MIN_DIST=5;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        //LocalBroadcastManager.getInstance(this).registerReceiver(positionReceiver,
+               // new IntentFilter("com.example.mymapfriends.POSITION_RECEIVED"));
 
-        
-        
-
-        // Initialize Firebase Auth
-        mAuth = FirebaseAuth.getInstance();
-        signInAnonymously();
-
-        db = FirebaseFirestore.getInstance();
         String sender = getIntent().getStringExtra("sender");
         String message = getIntent().getStringExtra("message");
 
@@ -83,7 +92,76 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
 
+        final LatLng[] latLng = {new LatLng(33, 9.5444)};
+        // Tracking
+        LocationListener locationListener=new LocationListener() {
+            @Override
+            public void onLocationChanged(@NonNull Location location) {
+
+                try {
+                    latLng[0] = new LatLng(location.getLatitude(),location.getLongitude());
+                    mMap.addMarker(new MarkerOptions()
+                            .position(latLng[0])
+                            .title("My position"));
+                    mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng[0]) );
+                    String phoneNumber="+15551234567";
+                    String myLatitude = String.valueOf(location.getLatitude());
+                    String myLongitude=String.valueOf(location.getLongitude());
+
+                    // Add to the route and draw a polyline (optional)
+                    routePoints.add(new LatLng(33.22,9.77));
+                    if (routePolyline != null) {
+                        routePolyline.remove();  // Remove old polyline
+                    }
+                    PolylineOptions polylineOptions = new PolylineOptions().addAll(routePoints)
+                            .color(Color.BLUE).width(5);
+                    routePolyline = mMap.addPolyline(polylineOptions);  // Update polyline
+
+                    // Move the camera to the new position
+                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(33.22,9.77), 15));
+
+                    String message= "My position is : #"+ myLatitude+"#"+myLongitude;
+                    SmsManager smsManager= SmsManager.getDefault();
+                    smsManager.sendTextMessage(phoneNumber,null,message,null,null);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                }
+
+
+                // Use the location data (e.g., update the UI or store it)
+            }
+        };
+
+
     }
+
+
+
+    // BroadcastReceiver to handle position updates
+    private BroadcastReceiver positionReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // Extract the position data from the Intent
+            double latitude = intent.getDoubleExtra("latitude", 0.0);
+            double longitude = intent.getDoubleExtra("longitude", 0.0);
+            String name = intent.getStringExtra("name");
+
+            // Add a marker on the map
+            if (mMap != null) {
+                LatLng position = new LatLng(latitude, longitude);
+                Marker marker = mMap.addMarker(new MarkerOptions()
+                        .position(position)
+                        .title(name));
+                if (marker != null) {
+                    marker.setTag(name);
+                }
+                // Optionally, move camera to the new marker
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(position, 10));
+            }
+        }
+    };
 
     private boolean checkPermissions() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
@@ -107,17 +185,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         unregisterReceiver(smsReceiver);
     }
 
-    public void signInAnonymously() {
-        mAuth.signInAnonymously()
-                .addOnCompleteListener(this, task -> {
-                    if (task.isSuccessful()) {
-                        FirebaseUser user = mAuth.getCurrentUser();
-                        if (user != null) {
-                            Log.d("Auth", "User ID: " + user.getUid());
-                        }
-                    }
-                });
-    }
 
 
 
