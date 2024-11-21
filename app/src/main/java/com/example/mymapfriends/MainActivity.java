@@ -41,10 +41,6 @@ import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 import com.google.android.gms.maps.model.Polyline;
-import com.google.android.gms.maps.model.PolylineOptions;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 
 import org.json.JSONArray;
@@ -68,12 +64,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
     private final long MIN_TIME=1000;
     private final long MIN_DIST=5;
+    private LocationListener locationListener;
+    private LatLng latLng;
+    private LocationManager locationManager;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        //LocalBroadcastManager.getInstance(this).registerReceiver(positionReceiver,
-               // new IntentFilter("com.example.mymapfriends.POSITION_RECEIVED"));
+        LocalBroadcastManager.getInstance(this).registerReceiver(positionReceiver,
+               new IntentFilter("com.example.mymapfriends.POSITION_RECEIVED"));
 
         String sender = getIntent().getStringExtra("sender");
         String message = getIntent().getStringExtra("message");
@@ -91,49 +91,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECEIVE_SMS, Manifest.permission.SEND_SMS, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-
-        final LatLng[] latLng = {new LatLng(33, 9.5444)};
-        // Tracking
-        LocationListener locationListener=new LocationListener() {
-            @Override
-            public void onLocationChanged(@NonNull Location location) {
-
-                try {
-                    latLng[0] = new LatLng(location.getLatitude(),location.getLongitude());
-                    mMap.addMarker(new MarkerOptions()
-                            .position(latLng[0])
-                            .title("My position"));
-                    mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng[0]) );
-                    String phoneNumber="+15551234567";
-                    String myLatitude = String.valueOf(location.getLatitude());
-                    String myLongitude=String.valueOf(location.getLongitude());
-
-                    // Add to the route and draw a polyline (optional)
-                    routePoints.add(new LatLng(33.22,9.77));
-                    if (routePolyline != null) {
-                        routePolyline.remove();  // Remove old polyline
-                    }
-                    PolylineOptions polylineOptions = new PolylineOptions().addAll(routePoints)
-                            .color(Color.BLUE).width(5);
-                    routePolyline = mMap.addPolyline(polylineOptions);  // Update polyline
-
-                    // Move the camera to the new position
-                    mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(33.22,9.77), 15));
-
-                    String message= "My position is : #"+ myLatitude+"#"+myLongitude;
-                    SmsManager smsManager= SmsManager.getDefault();
-                    smsManager.sendTextMessage(phoneNumber,null,message,null,null);
-                }
-                catch (Exception e)
-                {
-                    e.printStackTrace();
-                }
-
-
-                // Use the location data (e.g., update the UI or store it)
-            }
-        };
-
 
     }
 
@@ -200,7 +157,37 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         mMap.setOnMarkerClickListener(marker -> {
             Position position = (Position) marker.getTag();
+            LatLng sousse= new LatLng(33.821430,10);
+            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(sousse, 12));
 
+            mMap.addMarker(new MarkerOptions().position(sousse).title("Marker in Sousse"));
+            locationListener = new LocationListener() {
+                @Override
+                public void onLocationChanged(@NonNull Location location) {
+                    try {
+                        latLng = new LatLng(location.getLatitude(),location.getLongitude());
+                        mMap.addMarker(new MarkerOptions().position(latLng).title("My position"));
+                        mMap.moveCamera(CameraUpdateFactory.newLatLng(latLng));
+                        String phone="+15551234567";
+                        String myLatitude = String.valueOf(location.getLatitude());
+                        String myLongitude = String.valueOf(location.getLongitude());
+                        String message="Latitude = "+myLatitude+" Longitude = "+myLongitude;
+                        SmsManager smsManager=SmsManager.getDefault();
+                        smsManager.sendTextMessage(phone,null,message,null,null);
+                    }
+                    catch (Exception e){
+                        e.printStackTrace();
+                    }
+                }
+            };
+            locationManager= (LocationManager) getSystemService(LOCATION_SERVICE);
+            try {
+                locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,MIN_TIME,MIN_DIST,locationListener);
+                locationManager.requestLocationUpdates(locationManager.GPS_PROVIDER,MIN_TIME,MIN_DIST,locationListener);
+            }catch (SecurityException e)
+            {
+                e.printStackTrace();
+            }
             if (position != null) {
                 // If position is not null, show the InfoWindow
                 marker.showInfoWindow();
