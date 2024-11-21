@@ -7,6 +7,17 @@ public class Position {
     private double longitude;
     private String name;
 
+    @Override
+    public String toString() {
+        return "Position{" +
+                "positionId='" + positionId + '\'' +
+                ", phoneNumber='" + phoneNumber + '\'' +
+                ", latitude=" + latitude +
+                ", longitude=" + longitude +
+                ", name='" + name + '\'' +
+                '}';
+    }
+
     // Default constructor required for Firestore
     public Position() {}
 
@@ -17,6 +28,7 @@ public class Position {
         this.longitude = longitude;
         this.name = name;
     }
+
 
     // Constructor with positionId included (in case it's needed for local usage)
     public Position(String positionId, double latitude, double longitude,String phoneNumber,  String name) {

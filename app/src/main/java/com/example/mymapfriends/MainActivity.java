@@ -249,6 +249,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     for (int i = 0; i < jsonArray.length(); i++) {
                         JSONObject positionObj = jsonArray.getJSONObject(i);
                         Position position = new Position(
+                                positionObj.getString("id"),
                                 positionObj.getDouble("latitude"),
                                 positionObj.getDouble("longitude"),
                                 positionObj.getString("phone"),
@@ -450,10 +451,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         marker.setTag(position); // Make sure to set the Position object as the marker's tag
     }
 
-
     private void deleteMarkerFromBackend(Position position, final Marker marker) {
         String url = Config.Url_DeletePosition;  // Your PHP delete script URL
-        Log.d("Delete", "Starting the delete request for position ID: " + position.getPositionId());
+        Log.d("Position is",position.toString());// Convert positionId to an integer
+        int idInt = Integer.parseInt(position.getPositionId());
+
+        Log.d("Delete", "Starting the delete request for position ID: " + idInt);
 
         // Create AsyncTask to send POST request
         new AsyncTask<Position, Void, Boolean>() {
@@ -477,8 +480,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     urlConnection.setConnectTimeout(5000);  // Optional: Set timeout for connection
                     urlConnection.setReadTimeout(5000);     // Optional: Set timeout for reading data
 
-                    // Create the parameter string for the POST request
-                    String postData = "id=" + URLEncoder.encode(String.valueOf(position.getPositionId()), "UTF-8");
+                    // Prepare the parameter string for the POST request
+                    String postData = "id=" + URLEncoder.encode(String.valueOf(idInt), "UTF-8"); // Use the integer id
+
                     Log.d("Delete", "Post data: " + postData);
 
                     // Send the data
@@ -515,20 +519,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
 
             @Override
-            protected void onPostExecute(Boolean success) {
-                if (success) {
-                    Log.d("Delete", "Position deleted successfully.");
-                    // Here you can also update the UI or remove the marker from the map
-                    if (marker != null) {
-                        marker.remove();  // Remove the marker from the map
-                        Log.d("Delete", "Marker removed from map.");
-                    }
-                } else {
-                    Log.e("Delete", "Failed to delete position.");
-                    // Optionally show a toast or notify the user about the failure
+            protected void onPostExecute(Boolean result) {
+                // Handle the result (e.g., update UI)
+                if (marker != null) {
+                    marker.remove();
                 }
             }
-        }.execute(position);  // Execute AsyncTask
+        }.execute(position);
     }
 
 
